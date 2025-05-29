@@ -3,6 +3,8 @@ import gradio as gr
 import torch
 import logging
 import random
+from huggingface_hub import login # Import login function
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +17,10 @@ TRIGGER_WORD = "Ultra realistic"
 
 # Initialize the text-to-image pipeline globally
 try:
+    # Authenticate with Hugging Face Hub
+    login(token=os.getenv("HUGGINGFACE_TOKEN"))
+    logger.info("Authenticated with Hugging Face Hub.")
+
     logger.info(f"Loading base model: {BASE_MODEL_ID}")
     pipe = DiffusionPipeline.from_pretrained(BASE_MODEL_ID, torch_dtype=torch.bfloat16)
 
