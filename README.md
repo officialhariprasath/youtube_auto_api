@@ -24,7 +24,7 @@ You can get your Hugging Face token from: https://huggingface.co/settings/tokens
 
 ## Usage
 
-### Running the Flask App
+### Running the Gradio App
 
 1. Ensure your virtual environment is activated.
 
@@ -33,12 +33,12 @@ You can get your Hugging Face token from: https://huggingface.co/settings/tokens
 pip install -r requirements.txt
 ```
 
-3. Run the Flask application:
+3. Run the Gradio application:
 ```bash
 python app.py
 ```
 
-4. Open your web browser and go to `http://127.0.0.1:5000/` to access the text generator UI.
+4. Gradio will provide a public URL (e.g., a Colab Share link) to access the text generator UI.
 
 ### Running the Script (for direct text generation)
 
