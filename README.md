@@ -24,6 +24,24 @@ You can get your Hugging Face token from: https://huggingface.co/settings/tokens
 
 ## Usage
 
+### Running the Flask App
+
+1. Ensure your virtual environment is activated.
+
+2. Install the updated dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Run the Flask application:
+```bash
+python app.py
+```
+
+4. Open your web browser and go to `http://127.0.0.1:5000/` to access the text generator UI.
+
+### Running the Script (for direct text generation)
+
 Run the video generator:
 ```bash
 python video_generator.py
