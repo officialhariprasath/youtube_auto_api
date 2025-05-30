@@ -31,7 +31,7 @@ sponsor_html = """
        style="height:1em; width:auto; object-fit:contain;"
        title="Modal"/>
   <img src="https://pollinations.ai/favicon.ico"
-       style="height:1em; width:auto; object-fit:contain;"
+       style="height:1em; width=auto; object-fit:contain;"
        title="Pollination.ai"/>
 </div>
 """
