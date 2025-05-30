@@ -24,7 +24,7 @@ You can get your Hugging Face token from: https://huggingface.co/settings/tokens
 
 ## Usage
 
-### Running the Gradio App
+### Running the Gradio Client App
 
 1. Ensure your virtual environment is activated.
 
@@ -33,14 +33,25 @@ You can get your Hugging Face token from: https://huggingface.co/settings/tokens
 pip install -r requirements.txt
 ```
 
-3. Run the Gradio application:
+3. Set your Hugging Face token as an environment variable named `HF_TOKEN`. In your terminal, you can do this temporarily:
+```bash
+export HF_TOKEN=your_token_here # On Windows: $env:HF_TOKEN="your_token_here"
+```
+For Google Colab, you can use the Secrets feature or set it in a code cell:
+```python
+import os
+os.environ["HF_TOKEN"] = "your_token_here"
+```
+Replace `your_token_here` with your actual token.
+
+4. Run the Gradio application:
 ```bash
 python app.py
 ```
 
-4. Gradio will provide a public URL (e.g., a Colab Share link) to access the text generator UI.
+5. Gradio will provide a public URL (e.g., a Colab Share link) to access the image generator UI.
 
-### Running the Script (for direct text generation)
+### Running the Script (The direct script `video_generator.py` is no longer the primary method for image generation with the UI.)
 
 Run the video generator:
 ```bash

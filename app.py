@@ -1,125 +1,199 @@
-from diffusers import DiffusionPipeline
-import gradio as gr
-import torch
-import logging
-import random
-from huggingface_hub import login # Import login function
 import os
+import random
+import requests
+import gradio as gr
+from PIL import Image
+from io import BytesIO
+from gradio_client import Client
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Model IDs
-BASE_MODEL_ID = "black-forest-labs/FLUX.1-dev"
-LORA_MODEL_ID = "prithivMLmods/Canopus-LoRA-Flux-UltraRealism-2.0"
-TRIGGER_WORD = "Ultra realistic"
+sponsor_html = """
+<div style="display:flex; padding: 0em; justify-content: center; gap: 1em; border-radius: 2em;">
+  <img src="https://static-00.iconduck.com/assets.00/google-cloud-icon-2048x1288-h9qynww8.png"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="Google Cloud for Startups"/>
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Amazon_Web_Services_Logo.svg/2560px-Amazon_Web_Services_Logo.svg.png"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="AWS Activate"/>
+  <img src="https://ageyetech.com/wp-content/uploads/2020/07/AgEye_nvidia_inception_logo_new.png"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="NVIDIA Inception"/>
+  <img src="https://azurecomcdn.azureedge.net/cvt-8310f955fa0c7812bd316a20d46a917e5b94170e9e9da481ca3045acae446bb5/svg/logo.svg"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="Azure for Startups"/>
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Cloudflare_Logo.svg/2560px-Cloudflare_Logo.svg.png"
+       style="height:1em; width=auto; object-fit:contain;"
+       title="Cloudflare"/>
+  <img src="https://scaleway.com/cdn-cgi/image/width=640/https://www-uploads.scaleway.com/Scaleway_3_D_Logo_57e7fb833f.png"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="Scaleway"/>
+  <img src="https://cdn.prod.website-files.com/63e26df0d6659968e46142f7/63e27b40e661321d5278519b_logotype-bb8cd083.svg"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="Modal"/>
+  <img src="https://pollinations.ai/favicon.ico"
+       style="height:1em; width:auto; object-fit:contain;"
+       title="Pollination.ai"/>
+</div>
+"""
 
-# Initialize the text-to-image pipeline globally
-try:
-    # Authenticate with Hugging Face Hub
-    login(token=os.getenv("HUGGINGFACE_TOKEN"))
-    logger.info("Authenticated with Hugging Face Hub.")
+# more servers coming soon...
 
-    logger.info(f"Loading base model: {BASE_MODEL_ID}")
-    pipe = DiffusionPipeline.from_pretrained(BASE_MODEL_ID, torch_dtype=torch.bfloat16)
 
-    logger.info(f"Loading LoRA weights: {LORA_MODEL_ID}")
-    pipe.load_lora_weights(LORA_MODEL_ID)
+SERVER_NAMES = {
+    "google_us": "Google US Server",
+    "azure_lite": "Azure Lite Supercomputer Server",
+    "artemis" : "Artemis GPU Super cluster",
+    "nb_dr" : "NebulaDrive Tensor Server",
+    "pixelnet" : "PixelNet NPU Server",
+    "nsfw_core" : "NSFW-Core: Uncensored Server",
+    "nsfw_core_2" : "NSFW-Core: Uncensored Server 2",
+    "nsfw_core_3" : "NSFW-Core: Uncensored Server 3",
+    "nsfw_core_4" : "NSFW-Core: Uncensored Server 4",
+}
 
-    # Move pipeline to GPU if available
-    if torch.cuda.is_available():
-        pipe.to("cuda")
-        logger.info("Pipeline moved to GPU.")
-    else:
-        logger.warning("CUDA not available. Running on CPU, which may be slow.")
 
-    image_generator = pipe
-    logger.info("Text-to-image pipeline initialized.")
+SERVER_SOCKETS = {
+    "google_us": None,
+    "azure_lite": "FLUX-Pro-SERVER1",
+    "artemis" : "FLUX-Pro-Artemis-GPU",
+    "nb_dr" : "FLUX-Pro-NEBULADRIVE",
+    "pixelnet" : "FLUX-Pro-PIXELNET",
+    "nsfw_core": "FLUX-Pro-NSFW-LocalCoreProcessor",
+    "nsfw_core_2" : "FLUX-Pro-NSFW-LocalCoreProcessor-v2",
+    "nsfw_core_3" : "FLUX-Pro-NSFW-LocalCoreProcessor-v3",
+    "nsfw_core_4" : "FLUX-Pro-NSFW-LocalCoreProcessor-v4",
+}
 
-except Exception as e:
-    logger.error(f"Error initializing text-to-image pipeline: {str(e)}")
-    image_generator = None # Set to None if initialization fails
+HF_TOKEN = os.environ.get("HF_TOKEN")
+FLUX_URL  = os.environ.get("FLUX_URL")
 
-def generate_image(
-    prompt: str,
-    negative_prompt: str = "",
-    width: int = 1024,
-    height: int = 1024,
-    num_inference_steps: int = 30,
-    guidance_scale: float = 7.5,
-    seed: int = -1 # Use -1 for random seed
-):
-    """
-    Generate an image from a prompt using the Diffusion pipeline with LoRA weights.
-    """
-    if not image_generator:
-        return None, "Error: Image generation pipeline not initialized. Check logs for errors."
 
-    # Ensure trigger word is in the prompt
-    if TRIGGER_WORD.lower() not in prompt.lower():
-        prompt = f"{TRIGGER_WORD}, {prompt}"
-
-    # Set seed for reproducibility
-    generator = torch.Generator("cuda").manual_seed(seed) if seed != -1 and torch.cuda.is_available() else None
-    if seed == -1:
-        seed = random.randint(0, 2**32 - 1)
-        logger.info(f"Using random seed: {seed}")
-        if torch.cuda.is_available():
-             generator = torch.Generator("cuda").manual_seed(seed)
-        else:
-             generator = torch.Generator().manual_seed(seed)
-
+def _open_image_from_str(s: str):
+    # base64 decoding
+    if s.startswith("http"):
+        r = requests.get(s); return Image.open(BytesIO(r.content))
+    if os.path.exists(s):
+        return Image.open(s)
+    # try base64 blob
     try:
-        logger.info(f"Generating image for prompt: {prompt}")
-        logger.info(f"Negative prompt: {negative_prompt}")
-        logger.info(f"Dimensions: {width}x{height}")
-        logger.info(f"Steps: {num_inference_steps}")
-        logger.info(f"Guidance scale: {guidance_scale}")
-        logger.info(f"Seed: {seed}")
+        import base64
+        _, b64 = s.split(",", 1)
+        data = base64.b64decode(b64)
+        return Image.open(BytesIO(data))
+    except:
+        raise ValueError(f"Can't parse image string: {s[:30]}…")
 
-        # Generate the image
-        output = image_generator(
+
+def generate_image(prompt, width, height, seed, randomize, server_choice):
+
+    print(prompt+"\n\n\n\n")
+    # determine seed
+    if randomize:
+        seed = random.randint(0, 9_999_999)
+    used_seed = seed
+
+    # pick server key and socket
+    key = next(k for k, v in SERVER_NAMES.items() if v == server_choice)
+    socket = SERVER_SOCKETS.get(key)
+
+    # generate image via FLUX or HF space
+    if socket is None:
+        if not FLUX_URL:
+            return "Error: FLUX_URL not set.", used_seed
+        url = (
+            FLUX_URL
+            .replace("[prompt]", prompt)
+            .replace("[w]", str(width))
+            .replace("[h]", str(height))
+            .replace("[seed]", str(seed))
+        )
+        r = requests.get(url)
+        img = Image.open(BytesIO(r.content)) if r.ok else f"FLUX-Pro failed ({r.status_code})"
+    else:
+        space_id = f"NihalGazi/{socket}"
+        client = Client(space_id, hf_token=HF_TOKEN)
+        res = client.predict(
             prompt=prompt,
-            negative_prompt=negative_prompt,
             width=width,
             height=height,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            generator=generator
+            seed=seed,
+            randomize=randomize,
+            api_name="/predict"
         )
+        if isinstance(res, dict):
+            if res.get("path"):
+                img = Image.open(res["path"])
+            elif res.get("url"):
+                img = _open_image_from_str(res["url"])
+            else:
+                img = "No image found in response."
+        elif isinstance(res, str):
+            img = _open_image_from_str(res)
+        else:
+            img = f"Unexpected response type: {type(res)}"
 
-        image = output.images[0]
-        logger.info("Image generation successful.")
-        return image, None
+    # return both image and used seed
+    return img, used_seed
 
-    except Exception as e:
-        logger.error(f"Error during image generation: {str(e)}")
-        return None, f"Error generating image: {str(e)}"
+# ─── GRADIO INTERFACE ─────────────────────────────────────────────────────
+with gr.Blocks(theme=gr.themes.Default()) as demo:
+    gr.Markdown(
+        """
+# Unlimited FLUX-Pro
 
-# Create the Gradio interface
-if image_generator:
-    interface = gr.Interface(
-        fn=generate_image,
-        inputs=[
-            gr.Textbox(label="Prompt", lines=2, placeholder="Enter your positive prompt here..."),
-            gr.Textbox(label="Negative Prompt", lines=2, placeholder="Enter your negative prompt here..."),
-            gr.Number(label="Width", value=1024, precision=0),
-            gr.Number(label="Height", value=1024, precision=0),
-            gr.Slider(label="Inference Steps", minimum=10, maximum=100, value=30, step=1),
-            gr.Slider(label="Guidance Scale", minimum=1.0, maximum=20.0, value=7.5, step=0.1),
-            gr.Number(label="Seed (-1 for random)", value=-1, precision=0)
-        ],
-        outputs=[
-            gr.Image(label="Generated Image"),
-            gr.Textbox(label="Status/Error")
-        ],
-        title="FLUX Text-to-Image Generator with LoRA",
-        description="Generate images using the FLUX model with UltraRealism LoRA."
+**Enter a prompt and tweak your settings:**  
+- **Width & Height** – choose your canvas size  
+- **Seed** – pick a number or check **Randomize Seed**  
+- **Server** – switch between servers if one is slow or fails:
+  - **Google US Server**  
+  - **Azure Lite Supercomputer Server**  
+  - **Artemis GPU Super cluster**  
+  - **NebulaDrive Tensor Server**  
+  - **PixelNet NPU Server**  
+  - **NSFW‑Core: Uncensored Servers** (for explicit content; use responsibly)
+- **Suggestions** – have ideas? I'm open to them!
+
+⚠️ **Caution:**  
+The **NSFW‑Core** server can generate adult‑only content. You must be of legal age in your jurisdiction and comply with all local laws and platform policies. Developer is not liable for misuse.
+
+
+> ⚡ 4 NSFW Servers available 
+
+
+Click **Generate** and enjoy unlimited AI art!
+
+❤️ **Like & follow** for more AI projects:  
+• Instagram: [@nihal_gazi_io](https://www.instagram.com/nihal_gazi_io/)  
+• Discord: nihal_gazi_io  
+• Enjoying this? [Support](https://huggingface.co/spaces/NihalGazi/FLUX-Pro-Unlimited/discussions/11#68319a4ffcf0624d8b93d424) the creator with a small donation — every bit helps!
+
+
+"""
     )
 
-    if __name__ == "__main__":
-        # Launch the Gradio interface
-        interface.launch(share=True)
-else:
-    print("Image generation pipeline failed to initialize. Gradio interface will not be launched.") 
+    # Inputs
+    prompt = gr.Textbox(label="Prompt", placeholder="Enter your image prompt…", lines=4)
+    width  = gr.Slider(512, 2048, step=16, value=1280, label="Width")
+    height = gr.Slider(512, 2048, step=16, value=1280, label="Height")
+    seed   = gr.Number(label="Seed", value=0)
+    rand   = gr.Checkbox(label="Randomize Seed", value=True)
+    server = gr.Dropdown(label="Server", choices=list(SERVER_NAMES.values()),
+                         value=list(SERVER_NAMES.values())[0])
+
+    generate_btn = gr.Button("Generate")
+
+    # Outputs: image and seed display
+    output = gr.Image(type="pil", label="Generated Image")
+    seed_display = gr.Textbox(label="Used Seed", interactive=False)
+
+    generate_btn.click(
+        generate_image,
+        inputs=[prompt, width, height, seed, rand, server],
+        outputs=[output, seed_display],
+        concurrency_limit=None
+    )
+
+    # Sponsor wall
+    gr.HTML(sponsor_html)
+
+demo.launch() 
